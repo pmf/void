@@ -7,8 +7,35 @@ use std::{
     fs::{remove_file, rename, File, OpenOptions},
     io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
     process,
+	time::Duration,
 };
 
+use crossterm::{
+    ExecutableCommand,
+	QueueableCommand,
+	event,
+	event::{
+		Event,
+		MouseEvent,
+		KeyEvent,
+		EnableMouseCapture,
+		DisableMouseCapture,
+		poll,
+		read},
+	execute,
+    terminal,
+	cursor,
+	style::{
+		self,
+		Colorize,
+		Attribute,
+		Color,
+		SetAttribute,
+	},
+	Result
+};
+
+/*
 use termion::{
     clear, color, cursor,
     event::{Event, Key},
@@ -17,6 +44,7 @@ use termion::{
     screen::AlternateScreen,
     style, terminal_size,
 };
+*/
 
 use rand::{self, Rng};
 use regex::Regex;
@@ -49,7 +77,8 @@ pub struct Screen {
     drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
+    //stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
+    stdout: Stdout,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -94,7 +123,7 @@ impl Default for Screen {
             drawn_at: HashMap::new(),
             show_logs: false,
             drawing_root: 0,
-            stdout: None,
+            stdout: stdout(),
             dragging_from: None,
             dragging_to: None,
             work_path: None,
@@ -121,7 +150,9 @@ impl Default for Screen {
 impl Screen {
     fn help(&mut self) {
         self.cleanup();
-        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
+		cursor::MoveTo(1, 1);
+		execute!(self.stdout, terminal::Clear(terminal::ClearType::All));
+        //println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
         if self.single_key_prompt("").is_err() {
             // likely here because of testing
@@ -356,53 +387,83 @@ impl Screen {
             })
     }
 
-    fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
+    fn single_key_prompt(&mut self, prompt: &'static str) -> io::Result<event::Event> {
         trace!("prompt({})", prompt);
         if self.is_test {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
         }
 
         let stdin: Box<Read> = Box::new(stdin());
+
+		/*
         print!(
             "{}{}{}{}",
             cursor::Goto(0, self.dims.1),
             style::Invert,
-            clear::AfterCursor,
+            clear::UntilNewLine,
             prompt
         );
         self.flush();
-        let res = stdin.keys().nth(0).unwrap();
+		*/
+		
+		self.stdout
+			.queue(cursor::MoveTo(0, self.dims.1)).unwrap()
+			.queue(SetAttribute(Attribute::Reverse)).unwrap()
+			.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap()
+			.queue(style::PrintStyledContent(prompt.magenta())).unwrap();
+		self.stdout.flush();
+		
+		let res = event::read();
+		
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
-        res
+        print!("{}", Attribute::Reset);
+		let real_res = match res {
+			Ok(r) => Ok(r),
+			Err(r) => Err(io::Error::new(std::io::ErrorKind::Other, "o")),
+		};
+        real_res
     }
 
-    fn prompt(&mut self, prompt: &str) -> io::Result<Option<String>> {
+    fn prompt(&mut self, prompt: String) -> io::Result<Option<String>> {
         trace!("prompt({})", prompt);
         if self.is_test {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
         }
 
         let mut stdin: Box<Read> = Box::new(stdin());
+		
+		/*
         print!(
             "{}{}{}{}{}",
             style::Invert,
             cursor::Goto(0, self.dims.1),
-            clear::AfterCursor,
+            clear::UntilNewLine,
             prompt,
             cursor::Show
         );
+		*/
+		
+		self.stdout
+			.queue(SetAttribute(Attribute::Reverse)).unwrap()
+			.queue(cursor::MoveTo(0, self.dims.1)).unwrap()
+			.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap();
+			//.queue(style::PrintStyledContent(prompt.magenta())).unwrap();
+		self.stdout.flush().unwrap();
+		print!("{}", prompt);
+
+		
         self.cleanup();
-        let res = stdin.read_line();
+		let mut input_text = String::new();
+		io::stdin().read_line(&mut input_text);
         self.start_raw_mode();
-        debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
-        res
+        debug!("read prompt: {:?}", input_text);
+        print!("{}", Attribute::Reset);
+        Ok(Some(input_text))
     }
 
     fn enter_cmd(&mut self) {
         trace!("enter_cmd()");
-        if let Ok(Some(cmd)) = self.prompt("cmd: ") {
+        if let Ok(Some(cmd)) = self.prompt("cmd: ".to_string()) {
             debug!("received command {:?}", cmd);
         }
     }
@@ -422,7 +483,8 @@ impl Screen {
             SearchDirection::Forward => format!("search{}:", last_search_str),
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
-        if let Ok(Some(mut query)) = self.prompt(&*prompt) {
+        //if let Ok(Some(mut query)) = self.prompt(&*prompt) {
+        if let Ok(Some(mut query)) = self.prompt(prompt.clone()) {
             if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
@@ -463,7 +525,7 @@ impl Screen {
         trace!("prefix_jump_prompt()");
 
         let prefix = match self.single_key_prompt("prefix: ") {
-            Ok(Key::Char(c)) => c.to_string(),
+			Ok(event::Event::Key(event::KeyEvent{code: event::KeyCode::Char(c), modifiers: modifiers})) => c.to_string(),
             _ => return,
         };
         self.prefix_jump_to(prefix)
@@ -490,12 +552,20 @@ impl Screen {
             chars.split("").skip(1).zip(nodes.into_iter()).collect();
 
         // clear the prompt
-        print!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+		/*
+        print!("{}{}", cursor::Goto(1, self.dims.1), clear::UntilNewLine);
+		*/
+		self.stdout
+			.queue(cursor::MoveTo(1, self.dims.1)).unwrap()
+			.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap();
+		self.stdout.flush().unwrap();
+
 
         // print the hilighted char at each choice
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
+			/*
             print!(
                 "{}{}{}{}",
                 cursor::Goto(x, y),
@@ -503,11 +573,19 @@ impl Screen {
                 c,
                 style::Reset
             );
+			*/
+			self.stdout
+				.queue(cursor::MoveTo(x, y)).unwrap()
+				.queue(SetAttribute(Attribute::Reverse)).unwrap()
+				.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap()
+				.queue(style::PrintStyledContent(c.magenta())).unwrap();
         }
+
+		self.stdout.flush();
 
         // read the choice
         let choice = match self.single_key_prompt("choice: ") {
-            Ok(Key::Char(c)) => c.to_string(),
+			Ok(event::Event::Key(event::KeyEvent{code: event::KeyCode::Char(c), modifiers: modifiers})) => c.to_string(),
             _ => return,
         };
 
@@ -712,10 +790,7 @@ impl Screen {
 
     pub fn flush(&mut self) {
         trace!("flush()");
-        if let Some(mut s) = self.stdout.take() {
-            s.flush().unwrap();
-            self.stdout = Some(s);
-        }
+		self.stdout.flush();
     }
 
     fn unselect(&mut self) -> Option<NodeID> {
@@ -874,7 +949,7 @@ impl Screen {
         }
     }
 
-    fn recursive_restore(&mut self, node_id: NodeID) -> Result<(), ()> {
+    fn recursive_restore(&mut self, node_id: NodeID) -> Result<()> {
         if let Some(node) = self.undo_nodes.remove(&node_id) {
             self.with_node_mut_no_meta(node.parent_id, |p| {
                 if !p.children.contains(&node.id) {
@@ -889,7 +964,7 @@ impl Screen {
             }
             Ok(())
         } else {
-            Err(())
+            Err(crossterm::ErrorKind::ResizingTerminalFailure("hjh".to_string()))
         }
     }
 
@@ -906,35 +981,46 @@ impl Screen {
 
     pub fn run(&mut self) {
         self.start_raw_mode();
-        self.dims = terminal_size().unwrap();
+        self.dims = terminal::size().unwrap();
         self.draw();
-        let stdin = stdin();
-        for c in stdin.events() {
-            let evt = c.unwrap();
+		
+		loop {
+			self.dims = terminal::size().unwrap();
 
-            self.dims = terminal_size().unwrap();
+			if poll(Duration::from_millis(500)).unwrap() {
+				let event = read().unwrap();
+				let should_break = !self.handle_event(event);
 
-            let should_break = !self.handle_event(evt);
+				self.draw();
 
-            self.draw();
+				if self.should_auto_arrange() {
+					self.arrange();
+					self.draw();
+				}
 
-            if self.should_auto_arrange() {
-                self.arrange();
-                self.draw();
-            }
+				// if selected not visible, try to make it visible
+				self.scroll_to_selected();
 
-            // if selected not visible, try to make it visible
-            self.scroll_to_selected();
+				if should_break {
+					self.cleanup();
+					self.save();
+					break;
+				}
+			} else {
+			// Timeout expired and no `Event` is available
+			}
+		}
 
-            if should_break {
-                self.cleanup();
-                self.save();
-                break;
-            }
-        }
-        trace!("leaving stdin.events() loop");
+		trace!("leaving stdin.events() loop");
+		self.stdout
+			.queue(cursor::MoveTo(1, 1)).unwrap()
+			.queue(terminal::Clear(terminal::ClearType::All)).unwrap();
+		self.stdout.flush();
+
+		/*
         print!("{}{}", cursor::Goto(1, 1), clear::All);
-    }
+		*/
+	}
 
     fn toggle_collapsed(&mut self) {
         trace!("toggle_collapsed()");
@@ -1148,31 +1234,36 @@ impl Screen {
         }
     }
 
-    fn anchor(&self, node_id: NodeID) -> Result<NodeID, String> {
+//    fn anchor(&self, node_id: NodeID) -> Result<NodeID, String> {
+    fn anchor(&self, node_id: NodeID) -> Result<NodeID> {
         if self.drawn_at(node_id).is_none() {
-            return Err("node not drawn on this screen".to_owned());
+            return Err(crossterm::ErrorKind::ResizingTerminalFailure("hjh".to_string()));
         }
 
         // find the "root" just below self.drawing_root to mod
         // the rooted_coords for.
         let mut ptr = node_id;
         loop {
-            let id = self.parent(ptr).ok_or("node has no parent")?;
-            trace!(
-                "anchor loop id: {} ptr: {} selected: {} root: {}",
-                id,
-                ptr,
-                node_id,
-                self.drawing_root
-            );
-            if id != self.drawing_root {
-                ptr = id;
-            } else {
-                break;
-            }
-        }
-        Ok(ptr)
-    }
+			match self.parent(ptr) {
+				Some(id) => {
+					trace!(
+						"anchor loop id: {} ptr: {} selected: {} root: {}",
+						id,
+						ptr,
+						node_id,
+						self.drawing_root
+					);
+					if id != self.drawing_root {
+						ptr = id;
+					} else {
+						break;
+					}
+				},
+				None => (),
+			}
+		}
+		Ok(ptr)
+	}
 
     fn parent(&self, node_id: NodeID) -> Option<NodeID> {
         trace!("parent({})", node_id);
@@ -1613,15 +1704,11 @@ impl Screen {
     pub fn cleanup(&mut self) {
         trace!("cleanup()");
         print!("{}", cursor::Show);
-        self.stdout.take().unwrap().flush().unwrap();
+        self.stdout.flush().unwrap();
     }
 
     pub fn start_raw_mode(&mut self) {
-        if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(
-                AlternateScreen::from(stdout()).into_raw_mode().unwrap(),
-            ));
-        }
+		terminal::enable_raw_mode();
     }
 
     pub fn occupied(&self, coords: Coords) -> bool { self.lookup.contains_key(&coords) }
@@ -1690,7 +1777,13 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
+		/*
         print!("{}", clear::All);
+		*/
+		self.stdout
+			.queue(terminal::Clear(terminal::ClearType::All)).unwrap();
+		self.stdout.flush().unwrap();
+
 
         // print visible nodes
         self.draw_children_of_root();
@@ -1705,10 +1798,11 @@ impl Screen {
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
             let mut sep = format!(
                 "{}{}logs{}",
-                cursor::Goto(0, self.dims.1 - 6),
-                style::Invert,
-                style::Reset
+                cursor::MoveTo(0, self.dims.1 - 6),
+                Attribute::Reverse,
+                Attribute::Reset
             );
+
             for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
@@ -1774,9 +1868,9 @@ impl Screen {
 
         for (i, y) in (2..bar_height + 2).enumerate() {
             if i >= shade_start && i < shade_end {
-                print!("{}┃", cursor::Goto(self.dims.0, y));
+                print!("{}┃", cursor::MoveTo(self.dims.0, y));
             } else {
-                print!("{}│", cursor::Goto(self.dims.0, y));
+                print!("{}│", cursor::MoveTo(self.dims.0, y));
             }
         }
     }
@@ -1841,15 +1935,15 @@ impl Screen {
             return 0;
         }
 
-        let reset = &*format!("{}", color::Fg(color::Reset));
+        let reset = &*format!("{}", style::SetForegroundColor(Color::Reset));
         let mut pre_meta = String::new();
         let mut buf = String::new();
 
         // only actually print it if we're in-view
         if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
-            write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
+            write!(pre_meta, "{}{}", cursor::MoveTo(x, y), color).unwrap();
             if node.selected {
-                write!(&mut pre_meta, "{}", style::Invert).unwrap();
+                write!(&mut pre_meta, "{}", Attribute::Reverse).unwrap();
             }
             write!(&mut buf, "{}", pre_meta).unwrap();
             write!(&mut buf, "{}", prefix).unwrap();
@@ -1899,7 +1993,7 @@ impl Screen {
                 buf.push('…');
             }
 
-            print!("{}{}", buf, style::Reset);
+            print!("{}{}", buf, Attribute::Reset);
         }
 
         let visible_graphemes = self
@@ -1960,7 +2054,7 @@ impl Screen {
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
         print!("{}", random_fg_color());
         if path.len() == 1 {
-            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
+            print!("{} ↺", cursor::MoveTo(path[0].0, path[0].1))
         } else if path.len() > 1 {
             let first = if path[1].1 > path[0].1 {
                 match start_dir {
@@ -1976,7 +2070,7 @@ impl Screen {
                 '─'
             };
 
-            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
+            print!("{}{}", cursor::MoveTo(path[0].0, path[0].1), first);
             for items in path.windows(3) {
                 let (p, this, n) = (items[0], items[1], items[2]);
                 let c = if p.0 == n.0 {
@@ -1993,16 +2087,16 @@ impl Screen {
                     '└' // down+right or left+up
                 };
 
-                print!("{}{}", cursor::Goto(this.0, this.1), c)
+                print!("{}{}", cursor::MoveTo(this.0, this.1), c)
             }
             let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
             let end_char = match dest_dir {
                 Dir::L => '>',
                 Dir::R => '<',
             };
-            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
+            print!("{}{}", cursor::MoveTo(end_x, end_y), end_char);
         }
-        print!("{}", color::Fg(color::Reset));
+        print!("{}", style::SetForegroundColor(Color::Reset));
     }
 
     fn draw_header(&self) {
@@ -2023,10 +2117,10 @@ impl Screen {
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!(
                 "{}{}{}{}",
-                cursor::Goto(0, 1),
-                style::Invert,
+                cursor::MoveTo(0, 1),
+                Attribute::Reverse,
                 header_text,
-                style::Reset
+                Attribute::Reset
             );
             let text_len = header_text.chars().count();
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {

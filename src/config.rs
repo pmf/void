@@ -5,7 +5,13 @@ use std::{
     io::{self, Error, ErrorKind, Read},
 };
 
+use crossterm::{
+    event
+};
+
+/*
 use termion::event::{Event, Key, MouseEvent};
+*/
 
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
@@ -92,30 +98,28 @@ fn to_action(input: String) -> Option<Action> {
 }
 
 // Alt and Control must be specified with capital letters C- and A-
-fn to_key(raw_key: String) -> Option<Key> {
-    use termion::event::Key::{self, Alt, Char, Ctrl};
-
+fn to_key(raw_key: String) -> Option<event::KeyCode> {
     fn extract_key(raw_key: &str, idx: usize) -> Option<char> { raw_key.chars().nth(idx) }
 
     match &*raw_key {
-        "esc" => Some(Key::Esc),
-        "pgup" => Some(Key::PageUp),
-        "pgdn" => Some(Key::PageDown),
-        "del" => Some(Key::Delete),
-        "backspace" => Some(Key::Backspace),
-        "up" => Some(Key::Up),
-        "down" => Some(Key::Down),
-        "left" => Some(Key::Left),
-        "right" => Some(Key::Right),
+        "esc" => Some(event::KeyCode::Esc),
+        "pgup" => Some(event::KeyCode::PageUp),
+        "pgdn" => Some(event::KeyCode::PageDown),
+        "del" => Some(event::KeyCode::Delete),
+        "backspace" => Some(event::KeyCode::Backspace),
+        "up" => Some(event::KeyCode::Up),
+        "down" => Some(event::KeyCode::Down),
+        "left" => Some(event::KeyCode::Left),
+        "right" => Some(event::KeyCode::Right),
 
-        "space" => Some(Char(' ')),
-        "enter" => Some(Char('\n')),
-        "tab" => Some(Char('\t')),
+        "space" => Some(event::KeyCode::Char(' ')),
+        "enter" => Some(event::KeyCode::Char('\n')),
+        "tab" => Some(event::KeyCode::Char('\t')),
 
-        key if key.len() == 1 => extract_key(key, 0).map(Char),
+        key if key.len() == 1 => extract_key(key, 0).map(event::KeyCode::Char),
 
-        key if key.starts_with("A-") => extract_key(key, 2).map(Alt),
-        key if key.starts_with("C-") => extract_key(key, 2).map(Ctrl),
+        //key if key.starts_with("A-") => extract_key(key, 2).map(event::KeyCode::Alt),
+        //key if key.starts_with("C-") => extract_key(key, 2).map(event::KeyCode::Ctrl),
 
         _ => None,
     }
@@ -123,12 +127,12 @@ fn to_key(raw_key: String) -> Option<Key> {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    config: HashMap<Key, Action>,
+    config: HashMap<event::KeyCode, Action>,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        use termion::event::Key::*;
+        use crossterm::event::KeyCode::*;
         Config {
             config: vec![
                 (Esc, Action::UnselectRet),
@@ -143,6 +147,7 @@ impl Default for Config {
                 (F(1), Action::PrefixJump),
                 (Char('\n'), Action::CreateSibling),
                 (Char('\t'), Action::CreateChild),
+				/*
                 (Ctrl('n'), Action::CreateFreeNode),
                 (Ctrl('k'), Action::ExecSelected),
                 (Ctrl('w'), Action::DrillDown),
@@ -167,6 +172,7 @@ impl Default for Config {
                 (Alt('P'), Action::SelectParent),
                 (Alt('n'), Action::SelectNextSibling),
                 (Alt('p'), Action::SelectPrevSibling),
+				*/
             ]
             .into_iter()
             .collect(),
@@ -233,28 +239,27 @@ impl Config {
         Ok(config)
     }
 
-    pub fn map(&self, e: Event) -> Option<Action> {
-        use termion::event::{Key::*, MouseButton};
+    pub fn map(&self, e: event::Event) -> Option<Action> {
+        //use termion::event::{Key::*, MouseButton};
         match e {
-            Event::Key(Char(c)) => {
-                if let Some(action) = self.config.get(&Char(c)).cloned() {
+            event::Event::Key(event::KeyEvent{code: code, modifiers: modifiers}) => {
+                if let Some(action) = self.config.get(&code).cloned() {
                     Some(action)
                 } else {
-                    Some(Action::Char(c))
+                    Some(Action::Char('a'))
                 }
             },
+			/*
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
             },
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
             Event::Mouse(MouseEvent::Hold(..)) => None,
-            Event::Key(other) => {
-                let lookup = self.config.get(&other).cloned();
-                if lookup.is_none() {
-                    warn!("Weird event {:?}", other);
-                }
-                lookup
+			*/
+            event::Event::Key(other) => {
+                warn!("Weird event {:?}", other);
+				None
             },
             other => {
                 warn!("Unknown event received: {:?}", other);

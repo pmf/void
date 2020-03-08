@@ -18,8 +18,8 @@ default = []
 
 [dependencies]
 dirs = "1.0"
+crossterm = "0.14"
 clap = "2.0"
-termion = "1.1"
 log = "0.3"
 lazy_static = "0.2"
 time = "0.1"
