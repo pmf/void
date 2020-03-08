@@ -249,14 +249,12 @@ impl Config {
                     Some(Action::Char('a'))
                 }
             },
-			/*
-            Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
-                Some(Action::RightClick(x, y))
-            },
-            Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
-            Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
-            Event::Mouse(MouseEvent::Hold(..)) => None,
-			*/
+			event::Event::Mouse(event::MouseEvent::Down(event::MouseButton::Right, x, y, modifiers)) =>
+				Some(Action::RightClick(x, y)),
+			event::Event::Mouse(event::MouseEvent::Down(event::MouseButton::Left, x, y, modifiers)) =>
+				Some(Action::LeftClick(x, y)),
+			event::Event::Mouse(event::MouseEvent::Up(_, x, y, modifiers)) =>
+				Some(Action::Release(x, y)),
             event::Event::Key(other) => {
                 warn!("Weird event {:?}", other);
 				None
