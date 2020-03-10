@@ -38,6 +38,7 @@ fn main() {
 
     f.read_to_end(&mut data).unwrap();
     let saved_screen = deserialize_screen(data).ok();
+	f.unlock();
 
     // Initialise the main working screen
     let mut screen = saved_screen.unwrap_or_else(Screen::default);

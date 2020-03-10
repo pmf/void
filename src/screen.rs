@@ -115,7 +115,7 @@ impl Default for Screen {
             stdout: stdout(),
             dragging_from: None,
             dragging_to: None,
-            work_path: None,
+            work_path: Some("test.nodes".to_string()),
             max_id: 0,
             dims: (1, 1),
             lowest_drawn: 0,
@@ -1680,16 +1680,9 @@ impl Screen {
         self.assert_node_consistency();
         let data = serialization::serialize_screen(self);
         if let Some(ref path) = self.work_path {
-            let mut tmp_path = path.clone();
-            tmp_path.push_str(".tmp");
-            if remove_file(&tmp_path).is_ok() {
-                warn!("removed stale tmp file");
-            }
-            let mut f = File::create(&tmp_path).unwrap();
+            let mut f = File::create(&path).unwrap();
             f.write_all(&*data).unwrap();
             f.sync_all().unwrap();
-            rename(tmp_path, path).unwrap();
-            info!("saved work to {}", path);
         }
     }
 
