@@ -9,10 +9,6 @@ use crossterm::{
     event
 };
 
-/*
-use termion::event::{Event, Key, MouseEvent};
-*/
-
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
     LeftClick(u16, u16),
@@ -125,9 +121,15 @@ fn to_key(raw_key: String) -> Option<event::KeyCode> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct KeyWithModifiers {
+	code: event::KeyCode,
+	modifiers: event::KeyModifiers,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    config: HashMap<event::KeyCode, Action>,
+    config: HashMap<KeyWithModifiers, Action>,
 }
 
 impl Default for Config {
@@ -135,44 +137,42 @@ impl Default for Config {
         use crossterm::event::KeyCode::*;
         Config {
             config: vec![
-                (Esc, Action::UnselectRet),
-                (PageUp, Action::ScrollUp),
-                (PageDown, Action::ScrollDown),
-                (Delete, Action::DeleteSelected),
-                (Up, Action::SelectUp),
-                (Down, Action::SelectDown),
-                (Left, Action::SelectLeft),
-                (Right, Action::SelectRight),
-                (Backspace, Action::EraseChar),
-                (F(1), Action::PrefixJump),
-                (Char('\n'), Action::CreateSibling),
-                (Char('\t'), Action::CreateChild),
-				/*
-                (Ctrl('n'), Action::CreateFreeNode),
-                (Ctrl('k'), Action::ExecSelected),
-                (Ctrl('w'), Action::DrillDown),
-                (Ctrl('q'), Action::PopUp),
-                (Ctrl('f'), Action::PrefixJump),
-                (Ctrl('a'), Action::ToggleCompleted),
-                (Ctrl('h'), Action::ToggleHideCompleted),
-                (Ctrl('r'), Action::Arrow),
-                (Ctrl('p'), Action::AutoArrange),
-                (Ctrl('t'), Action::ToggleCollapsed),
-                (Ctrl('c'), Action::Quit),
-                (Ctrl('x'), Action::Save),
-                (Ctrl('l'), Action::ToggleShowLogs),
-                (Ctrl('e'), Action::EnterCmd),
-                (Ctrl('v'), Action::FindTask),
-                (Ctrl('y'), Action::YankPasteNode),
-                (Ctrl('g'), Action::RaiseSelected),
-                (Ctrl('d'), Action::LowerSelected),
-                (Ctrl('u'), Action::Search),
-                (Ctrl('z'), Action::UndoDelete),
-                (Ctrl('?'), Action::Help),
-                (Alt('P'), Action::SelectParent),
-                (Alt('n'), Action::SelectNextSibling),
-                (Alt('p'), Action::SelectPrevSibling),
-				*/
+                (KeyWithModifiers { code: Esc,        modifiers: event::KeyModifiers::empty()}, Action::UnselectRet),
+                (KeyWithModifiers { code: PageUp,     modifiers: event::KeyModifiers::empty()}, Action::ScrollUp),
+                (KeyWithModifiers { code: PageDown,   modifiers: event::KeyModifiers::empty()}, Action::ScrollDown),
+                (KeyWithModifiers { code: Delete,     modifiers: event::KeyModifiers::empty()}, Action::DeleteSelected),
+                (KeyWithModifiers { code: Up,         modifiers: event::KeyModifiers::empty()}, Action::SelectUp),
+                (KeyWithModifiers { code: Down,       modifiers: event::KeyModifiers::empty()}, Action::SelectDown),
+                (KeyWithModifiers { code: Left,       modifiers: event::KeyModifiers::empty()}, Action::SelectLeft),
+                (KeyWithModifiers { code: Right,      modifiers: event::KeyModifiers::empty()}, Action::SelectRight),
+                (KeyWithModifiers { code: Backspace,  modifiers: event::KeyModifiers::empty()}, Action::EraseChar),
+                (KeyWithModifiers { code: F(1),       modifiers: event::KeyModifiers::empty()}, Action::PrefixJump),
+                (KeyWithModifiers { code: Enter,      modifiers: event::KeyModifiers::empty()}, Action::CreateSibling),
+                (KeyWithModifiers { code: Tab,        modifiers: event::KeyModifiers::empty()}, Action::CreateChild),
+                (KeyWithModifiers { code: Char('n'),  modifiers: event::KeyModifiers::CONTROL}, Action::CreateFreeNode),
+                (KeyWithModifiers { code: Char('k'),  modifiers: event::KeyModifiers::CONTROL}, Action::ExecSelected),
+                (KeyWithModifiers { code: Char('w'),  modifiers: event::KeyModifiers::CONTROL}, Action::DrillDown),
+                (KeyWithModifiers { code: Char('q'),  modifiers: event::KeyModifiers::CONTROL}, Action::PopUp),
+                (KeyWithModifiers { code: Char('f'),  modifiers: event::KeyModifiers::CONTROL}, Action::PrefixJump),
+                (KeyWithModifiers { code: Char('a'),  modifiers: event::KeyModifiers::CONTROL}, Action::ToggleCompleted),
+                (KeyWithModifiers { code: Char('h'),  modifiers: event::KeyModifiers::CONTROL}, Action::ToggleHideCompleted),
+                (KeyWithModifiers { code: Char('r'),  modifiers: event::KeyModifiers::CONTROL}, Action::Arrow),
+                (KeyWithModifiers { code: Char('p'),  modifiers: event::KeyModifiers::CONTROL}, Action::AutoArrange),
+                (KeyWithModifiers { code: Char('t'),  modifiers: event::KeyModifiers::CONTROL}, Action::ToggleCollapsed),
+                (KeyWithModifiers { code: Char('c'),  modifiers: event::KeyModifiers::CONTROL}, Action::Quit),
+                (KeyWithModifiers { code: Char('x'),  modifiers: event::KeyModifiers::CONTROL}, Action::Save),
+                (KeyWithModifiers { code: Char('l'),  modifiers: event::KeyModifiers::CONTROL}, Action::ToggleShowLogs),
+                (KeyWithModifiers { code: Char('e'),  modifiers: event::KeyModifiers::CONTROL}, Action::EnterCmd),
+                (KeyWithModifiers { code: Char('v'),  modifiers: event::KeyModifiers::CONTROL}, Action::FindTask),
+                (KeyWithModifiers { code: Char('y'),  modifiers: event::KeyModifiers::CONTROL}, Action::YankPasteNode),
+                (KeyWithModifiers { code: Char('g'),  modifiers: event::KeyModifiers::CONTROL}, Action::RaiseSelected),
+                (KeyWithModifiers { code: Char('d'),  modifiers: event::KeyModifiers::CONTROL}, Action::LowerSelected),
+                (KeyWithModifiers { code: Char('u'),  modifiers: event::KeyModifiers::CONTROL}, Action::Search),
+                (KeyWithModifiers { code: Char('z'),  modifiers: event::KeyModifiers::CONTROL}, Action::UndoDelete),
+                (KeyWithModifiers { code: Char('?'),  modifiers: event::KeyModifiers::CONTROL}, Action::Help),
+                (KeyWithModifiers { code: Char('P'),  modifiers: event::KeyModifiers::ALT}, Action::SelectParent),
+                (KeyWithModifiers { code: Char('n'),  modifiers: event::KeyModifiers::ALT}, Action::SelectNextSibling),
+                (KeyWithModifiers { code: Char('p'),  modifiers: event::KeyModifiers::ALT}, Action::SelectPrevSibling),
             ]
             .into_iter()
             .collect(),
@@ -233,20 +233,24 @@ impl Config {
             let key = key_opt.unwrap();
             let action = action_opt.unwrap();
 
-            config.config.insert(key, action);
+			// TODO: no modifiers for now ...
+            config.config.insert(KeyWithModifiers { code: key, modifiers: event::KeyModifiers::empty() }, action);
         }
 
         Ok(config)
     }
 
     pub fn map(&self, e: event::Event) -> Option<Action> {
-        //use termion::event::{Key::*, MouseButton};
         match e {
             event::Event::Key(event::KeyEvent{code: code, modifiers: modifiers}) => {
-                if let Some(action) = self.config.get(&code).cloned() {
+				let k = KeyWithModifiers {code: code, modifiers: modifiers};
+                if let Some(action) = self.config.get(&k).cloned() {
                     Some(action)
                 } else {
-                    Some(Action::Char('a'))
+					match code {
+						event::KeyCode::Char(c) => Some(Action::Char(c)),
+						other => None,
+					}
                 }
             },
 			event::Event::Mouse(event::MouseEvent::Down(event::MouseButton::Right, x, y, modifiers)) =>

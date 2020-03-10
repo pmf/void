@@ -107,7 +107,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
         } else {
             None
         },
-        color: random_fg_color(),
+        color: random_fg_color().to_string(),
         auto_arrange: node_pb.get_auto_arrange(),
     }
 }

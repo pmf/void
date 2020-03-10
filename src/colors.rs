@@ -1,11 +1,16 @@
 use rand::{self, Rng};
 
+use crossterm::style::{Color, SetForegroundColor};
+
 pub fn random_fg_color() -> String {
-	use crossterm::style::{Color};
 	
 	let colors: Vec<String> = vec![
-//        format!("{}", Colored::ForegroundColor(Color::White)),
-			"white".to_string(),
+        SetForegroundColor(Color::White).to_string(),
+        SetForegroundColor(Color::Red).to_string(),
+        //SetForegroundColor(Color::Blue).to_string(),
+        SetForegroundColor(Color::Yellow).to_string(),
+        SetForegroundColor(Color::Green).to_string(),
+        SetForegroundColor(Color::Cyan).to_string(),
     ];
     let c = &*rand::thread_rng().choose(&*colors).unwrap();
     c.clone()

@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
     env,
     fmt::Write as FmtWrite,
-    fs::{remove_file, rename, File, OpenOptions},
+    fs::{remove_file, rename, copy, File, OpenOptions},
     io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
     process,
 	time::Duration,
@@ -34,17 +34,6 @@ use crossterm::{
 	},
 	Result
 };
-
-/*
-use termion::{
-    clear, color, cursor,
-    event::{Event, Key},
-    input::{MouseTerminal, TermRead},
-    raw::{IntoRawMode, RawTerminal},
-    screen::AlternateScreen,
-    style, terminal_size,
-};
-*/
 
 use rand::{self, Rng};
 use regex::Regex;
@@ -387,7 +376,7 @@ impl Screen {
             })
     }
 
-    fn single_key_prompt(&mut self, prompt: &'static str) -> io::Result<event::Event> {
+    fn single_key_prompt(&mut self, prompt: &str) -> io::Result<event::Event> {
         trace!("prompt({})", prompt);
         if self.is_test {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
@@ -409,8 +398,8 @@ impl Screen {
 		self.stdout
 			.queue(cursor::MoveTo(0, self.dims.1)).unwrap()
 			.queue(SetAttribute(Attribute::Reverse)).unwrap()
-			.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap()
-			.queue(style::PrintStyledContent(prompt.magenta())).unwrap();
+			.queue(terminal::Clear(terminal::ClearType::UntilNewLine)).unwrap();
+			//.queue(style::PrintStyledContent(prompt.magenta())).unwrap();
 		self.stdout.flush();
 		
 		let res = event::read();
@@ -484,7 +473,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         //if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-        if let Ok(Some(mut query)) = self.prompt(prompt.clone()) {
+        if let Ok(Some(mut query)) = self.prompt(prompt) {
             if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
@@ -981,6 +970,9 @@ impl Screen {
 
     pub fn run(&mut self) {
         self.start_raw_mode();
+		
+		execute!(self.stdout, EnableMouseCapture);
+
         self.dims = terminal::size().unwrap();
         self.draw();
 		
@@ -1705,6 +1697,7 @@ impl Screen {
         trace!("cleanup()");
         print!("{}", cursor::Show);
         self.stdout.flush().unwrap();
+		terminal::disable_raw_mode();
     }
 
     pub fn start_raw_mode(&mut self) {
