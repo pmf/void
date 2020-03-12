@@ -1705,6 +1705,7 @@ impl Screen {
     pub fn cleanup(&mut self) {
         trace!("cleanup()");
         print!("{}", cursor::Show);
+		execute!(self.stdout, EnableMouseCapture);
         self.stdout.flush().unwrap();
 		terminal::disable_raw_mode();
     }
