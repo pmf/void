@@ -92,6 +92,13 @@ pub struct Screen {
 
     // timer for double clicks
     last_click_ms: u64,
+	
+	// crossterm (being cross platform) does not support double click;
+	// on Windows this filters out the second UP of the double click,
+	// so from crossterm we receive a sequence DOWN - UP - UP. So instead
+	// of filtering for the interval between two consecutive DOWN events,
+	// we need to watch out for two UP events without DOWN in between
+	last_up_latched: bool,
 
     // grapheme calculation is expensive
     grapheme_cache: HashMap<NodeID, usize>,
@@ -129,6 +136,7 @@ impl Default for Screen {
             ephemeral_max_id: std::u64::MAX,
             tag_db: TagDB::default(),
             last_click_ms: 0,
+			last_up_latched: false,
             grapheme_cache: HashMap::new(),
         };
         screen.nodes.insert(0, root);
@@ -185,6 +193,7 @@ impl Screen {
         match self.config.map(evt) {
             Some(e) => match e {
                 Action::LeftClick(x, y) => {
+					self.last_up_latched = false;
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.click_screen(internal_coords)
                 },
@@ -192,8 +201,15 @@ impl Screen {
                     self.pop_focus();
                 },
                 Action::Release(x, y) => {
-                    let internal_coords = self.screen_to_internal_xy((x, y));
-                    self.release(internal_coords)
+					if (self.last_up_latched) {
+						self.drill_down();
+						self.last_up_latched = false;
+						()
+					} else {
+					self.last_up_latched = true;
+						let internal_coords = self.screen_to_internal_xy((x, y));
+						self.release(internal_coords)
+					}
                 },
                 // Write character to selection
                 Action::Char(c) if self.selected.is_some() => {
