@@ -45,6 +45,17 @@ use crate::{
     Config, Coords, Dir, Node, NodeID, Pack, TagDB,
 };
 
+pub enum EventHandlerResult {
+	RedrawRequired,
+	NoActionRequired,
+	Quit,
+}
+
+pub enum DragState {
+	NotDragging,
+	Dragging,
+}
+
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
@@ -100,6 +111,9 @@ pub struct Screen {
 	// we need to watch out for two UP events without DOWN in between
 	last_up_latched: bool,
 
+	drag_state: DragState,
+    last_mouse_loc: Coords,
+
     // grapheme calculation is expensive
     grapheme_cache: HashMap<NodeID, usize>,
 }
@@ -137,6 +151,8 @@ impl Default for Screen {
             tag_db: TagDB::default(),
             last_click_ms: 0,
 			last_up_latched: false,
+            last_mouse_loc: (0, 0),
+            drag_state: DragState::NotDragging,
             grapheme_cache: HashMap::new(),
         };
         screen.nodes.insert(0, root);
@@ -189,24 +205,30 @@ impl Screen {
     }
 
     // return of false signals to the caller that we are done in this view
-    pub fn handle_event(&mut self, evt: Event) -> bool {
+    pub fn handle_event(&mut self, evt: Event) -> EventHandlerResult {
         match self.config.map(evt) {
             Some(e) => match e {
                 Action::LeftClick(x, y) => {
 					self.last_up_latched = false;
                     let internal_coords = self.screen_to_internal_xy((x, y));
-                    self.click_screen(internal_coords)
+                    
+                    if (self.last_mouse_loc != internal_coords) {
+                        self.drag_state = DragState::Dragging;
+                    }
+
+                    self.click_screen(internal_coords);
                 },
                 Action::RightClick(..) => {
                     self.pop_focus();
                 },
                 Action::Release(x, y) => {
+                    self.drag_state = DragState::NotDragging;
+
 					if (self.last_up_latched) {
 						self.drill_down();
 						self.last_up_latched = false;
-						()
 					} else {
-					self.last_up_latched = true;
+					    self.last_up_latched = true;
 						let internal_coords = self.screen_to_internal_xy((x, y));
 						self.release(internal_coords)
 					}
@@ -225,7 +247,13 @@ impl Screen {
                     self.prefix_jump_to(c.to_string());
                 },
                 Action::Help => self.help(),
-                Action::UnselectRet => return self.unselect().is_some(),
+                Action::UnselectRet => if self.unselect().is_some() {
+                        print!("unselect part 1\n");
+                        return EventHandlerResult::RedrawRequired;
+                    } else {
+                        print!("unselect part 1\n");
+                        return EventHandlerResult::Quit;
+                },
                 Action::ScrollUp => self.scroll_up(),
                 Action::ScrollDown => self.scroll_down(),
                 Action::DeleteSelected => self.delete_selected(true),
@@ -246,7 +274,9 @@ impl Screen {
                 Action::Arrow => self.add_or_remove_arrow(),
                 Action::AutoArrange => self.toggle_auto_arrange(),
                 Action::ToggleCollapsed => self.toggle_collapsed(),
-                Action::Quit => return false,
+                Action::Quit => {
+                    return EventHandlerResult::Quit;
+                },
                 Action::Save => self.save(),
                 Action::ToggleShowLogs => self.toggle_show_logs(),
                 Action::EnterCmd => self.enter_cmd(),
@@ -262,7 +292,11 @@ impl Screen {
             },
             None => warn!("received unknown input"),
         }
-        true
+
+        match self.drag_state {
+            DragState::Dragging => EventHandlerResult::NoActionRequired,
+            DragState::NotDragging => EventHandlerResult::RedrawRequired,
+        }
     }
 
     fn exists(&self, node_id: NodeID) -> bool { self.nodes.get(&node_id).is_some() }
@@ -997,22 +1031,27 @@ impl Screen {
 
 			if poll(Duration::from_millis(500)).unwrap() {
 				let event = read().unwrap();
-				let should_break = !self.handle_event(event);
+                let hr = self.handle_event(event);
+				
+				match hr {
+					EventHandlerResult::RedrawRequired => {
+						self.draw();
 
-				self.draw();
+						if self.should_auto_arrange() {
+							self.arrange();
+							self.draw();
+						}
 
-				if self.should_auto_arrange() {
-					self.arrange();
-					self.draw();
-				}
-
-				// if selected not visible, try to make it visible
-				self.scroll_to_selected();
-
-				if should_break {
-					self.cleanup();
-					self.save();
-					break;
+						// if selected not visible, try to make it visible
+						self.scroll_to_selected();
+					},
+					EventHandlerResult::NoActionRequired => {},
+					EventHandlerResult::Quit => {
+						print!("quitting 1\n");
+						self.cleanup();
+						self.save();
+						break;
+					}
 				}
 			} else {
 			// Timeout expired and no `Event` is available
